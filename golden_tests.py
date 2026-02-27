@@ -39,13 +39,13 @@ GRADING_TASKS = IMOBenchGradingBench.list_tasks("all")
 @pytest.mark.integration
 @pytest.mark.parametrize("task", GRADING_TASKS)
 async def test_gradingbench_xfail(task: JSONObject):
-    """Test that incorrect grading gets reward=0.0 (requires OpenAI API key)"""
+    """Test that incorrect grading gets reward=0.0 (requires Gemini API key)"""
     import os
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        pytest.skip("OPENAI_API_KEY not set")
+        pytest.skip("GEMINI_API_KEY not set")
 
-    env = IMOBenchGradingBench(task_spec=task, secrets={"openai_api_key": api_key})
+    env = IMOBenchGradingBench(task_spec=task, secrets={"gemini_api_key": api_key})
 
     incorrect_answer = "definitely_wrong_answer_123456789"
     result: ToolOutput = await env.answer(AnswerParams2(grading_analysis_and_score=incorrect_answer))

@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 import re
 import traceback
@@ -5,7 +6,8 @@ from typing import Literal, cast, List
 
 from pydantic import BaseModel
 import pandas as pd
-import openai
+from google import genai
+from google.genai import types
 
 from openreward.environments import Environment, tool, JSONObject, ToolOutput, TextBlock, Split
 
@@ -30,11 +32,11 @@ class IMOBenchGradingBench(Environment):
         super().__init__(task_spec)
         self.validated = TaskSpec.model_validate(task_spec)
 
-        api_key = secrets.get("openai_api_key")
+        api_key = secrets.get("gemini_api_key")
         if not api_key:
-            raise ValueError("OpenAI API key must be provided via secrets parameter")
+            raise ValueError("Gemini API key must be provided via secrets parameter")
 
-        self.client = openai.AsyncClient(api_key=api_key)
+        self.client = genai.Client(api_key=api_key)
 
     async def get_prompt(self) -> List[TextBlock]:
         prompt = f"""Carefully analyze the given problem statement and the proposed solution, and then write out your analysis regarding the correctness of the proposed solution.
@@ -64,7 +66,7 @@ Solution:
                 if last_word in valid_grades:
                     extracted_grade = last_word
 
-            # If extraction failed, use OpenAI API to extract the grade
+            # If extraction failed, use Gemini API to extract the grade
             if extracted_grade is None:
                 prompt = f"""## Instructions for Extracting Final Scores
 **Objective:** Given an response of an evaluation prompt, extract the final score presented within the response and format it specifically.
@@ -84,16 +86,17 @@ Solution:
 Below is the response:
 {params.grading_analysis_and_score}"""
 
-                res = await self.client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0,
-                    stream=False
+                res = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model="gemini-2.5-flash",
+                    contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
+                    config=types.GenerateContentConfig(temperature=0),
                 )
 
-                api_response = res.choices[0].message.content or ""
+                assert res.candidates is not None
+                assert res.candidates[0].content is not None
+                assert res.candidates[0].content.parts is not None
+                api_response = res.candidates[0].content.parts[0].text or ""
                 # Extract the grade from the API response
                 # Look for "Final answer: " pattern
                 match = re.search(r"Final answer:\s*(\w+)", api_response, re.IGNORECASE)
