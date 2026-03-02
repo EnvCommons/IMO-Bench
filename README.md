@@ -23,7 +23,7 @@ IMO-Bench does not require a sandbox. It has minimal compute requirements.
 
 ## Tasks
 
-IMO-Bench contains three sub-environments, each with 5 splits (all, Algebra, Combinatorics, Geometry, Number Theory). All splits are test-only. Total: 1,460 tasks.
+IMO-Bench contains three environment variants, each with 5 splits (all, Algebra, Combinatorics, Geometry, Number Theory). All splits are test-only. Total: 1,460 tasks.
 
 - **AnswerBench** (400 tasks): Problems with short numerical answers (100 per category). The agent solves the problem and submits an answer verified by the `math_verify` library.
 - **ProofBench** (60 tasks): Problems requiring full proof generation (30 basic + 30 advanced). The agent writes a proof that is graded on the IMO 0-7 scale by an LLM grader (gemini-2.5-pro).
@@ -49,7 +49,7 @@ Agents are given a single tool across all three sub-environments:
 
 ## Time Horizon
 
-IMO-Bench is a single-turn environment. The agent receives a math problem and submits one answer. Each task requires exactly one tool call.
+IMO-Bench consists of single-turn environments. The agent receives a math problem and submits one answer. Each task requires exactly one tool call.
 
 ## Environment Difficulty
 
