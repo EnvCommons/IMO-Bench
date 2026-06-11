@@ -1,14 +1,12 @@
-import asyncio
 from pathlib import Path
 import re
-import traceback
 from typing import Literal, cast, List
 
 from pydantic import BaseModel
 import pandas as pd
 from google import genai
-from google.genai import types
 
+from grading_utils import generate_with_retry
 from openreward.environments import Environment, tool, JSONObject, ToolOutput, TextBlock, Split
 
 if Path("/orwd_data/").exists():
@@ -54,21 +52,20 @@ Solution:
 
     @tool
     async def answer(self, params: AnswerParams) -> ToolOutput:
-        try:
-            # First, try to extract the grade from the last word of the response
-            response_text = params.grading_analysis_and_score.strip()
-            words = response_text.split()
-            extracted_grade: str | None = None
+        # First, try to extract the grade from the last word of the response
+        response_text = params.grading_analysis_and_score.strip()
+        words = response_text.split()
+        extracted_grade: str | None = None
 
-            if words:
-                last_word = words[-1].lower().rstrip('.,!?;:')
-                valid_grades = {"incorrect", "partial", "almost", "correct"}
-                if last_word in valid_grades:
-                    extracted_grade = last_word
+        if words:
+            last_word = words[-1].lower().rstrip('.,!?;:')
+            valid_grades = {"incorrect", "partial", "almost", "correct"}
+            if last_word in valid_grades:
+                extracted_grade = last_word
 
-            # If extraction failed, use Gemini API to extract the grade
-            if extracted_grade is None:
-                prompt = f"""## Instructions for Extracting Final Scores
+        # If extraction failed, use Gemini API to extract the grade
+        if extracted_grade is None:
+            prompt = f"""## Instructions for Extracting Final Scores
 **Objective:** Given an response of an evaluation prompt, extract the final score presented within the response and format it specifically.
 **Process:**
 1. **Analyze the response:** Scan the response to identify the final score provided by the evaluator.
@@ -86,55 +83,38 @@ Solution:
 Below is the response:
 {params.grading_analysis_and_score}"""
 
-                res = await asyncio.to_thread(
-                    self.client.models.generate_content,
-                    model="gemini-2.5-flash",
-                    contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
-                    config=types.GenerateContentConfig(temperature=0),
-                )
+            api_response = await generate_with_retry(self.client, "gemini-2.5-flash", prompt)
+            # Extract the grade from the API response
+            # Look for "Final answer: " pattern
+            match = re.search(r"Final answer:\s*(\w+)", api_response, re.IGNORECASE)
+            if match:
+                extracted_grade = match.group(1).lower()
+            else:
+                # Fallback: try to find one of the valid grades in the response
+                valid_grades = {"incorrect", "partial", "almost", "correct"}
+                for grade in valid_grades:
+                    if grade in api_response.lower():
+                        extracted_grade = grade
+                        break
 
-                assert res.candidates is not None
-                assert res.candidates[0].content is not None
-                assert res.candidates[0].content.parts is not None
-                api_response = res.candidates[0].content.parts[0].text or ""
-                # Extract the grade from the API response
-                # Look for "Final answer: " pattern
-                match = re.search(r"Final answer:\s*(\w+)", api_response, re.IGNORECASE)
-                if match:
-                    extracted_grade = match.group(1).lower()
-                else:
-                    # Fallback: try to find one of the valid grades in the response
-                    valid_grades = {"incorrect", "partial", "almost", "correct"}
-                    for grade in valid_grades:
-                        if grade in api_response.lower():
-                            extracted_grade = grade
-                            break
+                if extracted_grade is None:
+                    extracted_grade = "not_found"
 
-                    if extracted_grade is None:
-                        extracted_grade = "not_found"
+        # Compare extracted grade with expected response
+        expected_grade = self.validated.score_assigned.strip().lower()
+        correct = extracted_grade == expected_grade
 
-            # Compare extracted grade with expected response
-            expected_grade = self.validated.score_assigned.strip().lower()
-            correct = extracted_grade == expected_grade
-
-            return ToolOutput(
-                metadata={
-                    "correct": correct,
-                    "extracted_grade": extracted_grade,
-                    "expected_grade": expected_grade,
-                    "grading_analysis_and_score": params.grading_analysis_and_score,
-                },
-                blocks=[TextBlock(text=f"Grade: {extracted_grade} (Expected: {expected_grade}) - {'Correct' if correct else 'Incorrect'}")],
-                reward=1.0 if correct else 0.0,
-                finished=True,
-            )
-        except Exception:
-            return ToolOutput(
-                metadata={"error": traceback.format_exc()},
-                blocks=[TextBlock(text="Error occurred during grading")],
-                reward=0.0,
-                finished=True,
-            )
+        return ToolOutput(
+            metadata={
+                "correct": correct,
+                "extracted_grade": extracted_grade,
+                "expected_grade": expected_grade,
+                "grading_analysis_and_score": params.grading_analysis_and_score,
+            },
+            blocks=[TextBlock(text=f"Grade: {extracted_grade} (Expected: {expected_grade}) - {'Correct' if correct else 'Incorrect'}")],
+            reward=1.0 if correct else 0.0,
+            finished=True,
+        )
 
     @classmethod
     def list_tasks(cls, split: str) -> list[JSONObject]:
