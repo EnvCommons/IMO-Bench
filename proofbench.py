@@ -1,14 +1,12 @@
-import asyncio
 from pathlib import Path
 import re
-import traceback
 from typing import List
 
 from pydantic import BaseModel
 import pandas as pd
 from google import genai
-from google.genai import types
 
+from grading_utils import generate_with_retry
 from prompts import GRADING_PROMPT
 from openreward.environments import Environment, tool, JSONObject, ToolOutput, TextBlock, Split
 
@@ -45,54 +43,35 @@ class IMOBenchProofBench(Environment):
 
     @tool
     async def answer(self, params: AnswerParams) -> ToolOutput:
-        try:
-            prompt = GRADING_PROMPT.format(
-                problem_statement=self.validated.problem,
-                solution=self.validated.solution,
-                guidelines=self.validated.guidelines,
-                student_answer=params.proof_and_solution
-            )
+        prompt = GRADING_PROMPT.format(
+            problem_statement=self.validated.problem,
+            solution=self.validated.solution,
+            guidelines=self.validated.guidelines,
+            student_answer=params.proof_and_solution
+        )
 
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model="gemini-2.5-pro",
-                contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
-                config=types.GenerateContentConfig(temperature=0),
-            )
+        response_text = await generate_with_retry(self.client, "gemini-2.5-pro", prompt)
 
-            assert response.candidates is not None
-            assert response.candidates[0].content is not None
-            assert response.candidates[0].content.parts is not None
-            response_text = response.candidates[0].content.parts[0].text
-            assert response_text is not None
+        # Extract score from <points>N out of 7</points> format
+        match = re.search(r"<points>(\d+) out of 7</points>", response_text)
+        reward: float | None = None
+        extracted_score: int | None = None
+        if match:
+            extracted_score = int(match.group(1))
+            if extracted_score in VALID_SCORES:
+                reward = extracted_score / 7.0
 
-            # Extract score from <points>N out of 7</points> format
-            match = re.search(r"<points>(\d+) out of 7</points>", response_text)
-            reward: float | None = None
-            extracted_score: int | None = None
-            if match:
-                extracted_score = int(match.group(1))
-                if extracted_score in VALID_SCORES:
-                    reward = extracted_score / 7.0
-
-            score_text = f"{extracted_score}/7" if extracted_score is not None else "N/A"
-            return ToolOutput(
-                metadata={
-                    "grader_response": response_text,
-                    "extracted_score": extracted_score,
-                    "reward": reward,
-                },
-                blocks=[TextBlock(text=f"Score: {score_text} (Reward: {reward if reward is not None else 'N/A'})")],
-                reward=reward,
-                finished=True,
-            )
-        except Exception:
-            return ToolOutput(
-                metadata={"error": traceback.format_exc()},
-                blocks=[TextBlock(text="Error occurred during proof grading")],
-                reward=None,
-                finished=True,
-            )
+        score_text = f"{extracted_score}/7" if extracted_score is not None else "N/A"
+        return ToolOutput(
+            metadata={
+                "grader_response": response_text,
+                "extracted_score": extracted_score,
+                "reward": reward,
+            },
+            blocks=[TextBlock(text=f"Score: {score_text} (Reward: {reward if reward is not None else 'N/A'})")],
+            reward=reward,
+            finished=True,
+        )
 
     @classmethod
     def list_tasks(cls, split: str) -> list[JSONObject]:

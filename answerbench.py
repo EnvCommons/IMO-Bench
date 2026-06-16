@@ -1,6 +1,5 @@
 from pathlib import Path
 import re
-import traceback
 from typing import cast, List
 
 from pydantic import BaseModel
@@ -34,25 +33,22 @@ class IMOBenchAnswerBench(Environment):
 
     @tool
     async def answer(self, params: AnswerParams) -> ToolOutput:
-        try:
-            correct = verify_math_answer(params.answer, self.validated.answer)
-            return ToolOutput(
-                metadata={
-                    "correct": correct,
-                    "model_answer": params.answer,
-                    "solution": self.validated.answer,
-                },
-                blocks=[TextBlock(text=f"{'Correct!' if correct else 'Incorrect.'} Expected: {self.validated.answer}")],
-                reward=1.0 if correct else 0.0,
-                finished=True,
-            )
-        except Exception:
-            return ToolOutput(
-                metadata={"error": traceback.format_exc()},
-                blocks=[TextBlock(text="Error occurred during verification")],
-                reward=0.0,
-                finished=True,
-            )
+        # verify_math_answer is deterministic and already falls back to string
+        # comparison for unparseable answers, so no retry is needed here. Any
+        # exception that still escapes is a genuine verifier defect and is left
+        # to propagate (the SDK marks the call ToolFailed and ends the rollout)
+        # rather than fabricating a reward.
+        correct = verify_math_answer(params.answer, self.validated.answer)
+        return ToolOutput(
+            metadata={
+                "correct": correct,
+                "model_answer": params.answer,
+                "solution": self.validated.answer,
+            },
+            blocks=[TextBlock(text=f"{'Correct!' if correct else 'Incorrect.'} Expected: {self.validated.answer}")],
+            reward=1.0 if correct else 0.0,
+            finished=True,
+        )
 
     @classmethod
     def list_tasks(cls, split: str) -> list[JSONObject]:
