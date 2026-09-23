@@ -4,7 +4,7 @@
 
 ## Description
 
-**IMO-Bench** is an environment for evaluating agents on International Mathematical Olympiad (IMO) problems. It contains three sub-environments targeting different mathematical capabilities: **AnswerBench** (numerical answer extraction), **GradingBench** (solution grading), and **ProofBench** (proof generation). Problems span four IMO categories: Algebra, Combinatorics, Geometry, and Number Theory.
+**IMO-Bench** is an environment for evaluating agents on International Mathematical Olympiad (IMO) problems. It contains three sub-environments targeting different mathematical capabilities: **AnswerBench** (short-answer problem solving), **GradingBench** (solution grading), and **ProofBench** (proof generation). Problems span four IMO categories: Algebra, Combinatorics, Geometry, and Number Theory.
 
 ## Capabilities
 
@@ -25,8 +25,8 @@ IMO-Bench does not require a sandbox. It has minimal compute requirements.
 
 IMO-Bench contains three environment variants, each with 5 splits (all, Algebra, Combinatorics, Geometry, Number Theory). All splits are test-only. Total: 1,460 tasks.
 
-- **AnswerBench** (400 tasks): Problems with short numerical answers (100 per category). The agent solves the problem and submits an answer, which an LLM grader checks for mathematical equivalence with the reference answer (the paper's AnswerAutoGrader prompt; gemini-2.5-pro by default).
-- **ProofBench** (60 tasks): Problems requiring full proof generation (30 basic + 30 advanced). The agent writes a proof that is graded on the IMO 0-7 scale by an LLM grader (gemini-2.5-pro).
+- **AnswerBench** (400 tasks): Problems with short final answers — numbers, expressions or sets (100 per category). The agent solves the problem and submits an answer, which an LLM grader checks for mathematical equivalence with the reference answer (the paper's AnswerAutoGrader prompt; gemini-2.5-pro by default).
+- **ProofBench** (60 tasks): Problems requiring full proof generation (30 basic + 30 advanced). The agent writes a proof that is graded on the IMO 0-7 scale by an LLM grader (gemini-2.5-pro by default).
 - **GradingBench** (1,000 tasks): Problems paired with a proposed solution and a ground-truth grade. The agent analyzes the solution and assigns a grade (incorrect, partial, almost, correct).
 
 ## Reward Structure
@@ -34,18 +34,20 @@ IMO-Bench contains three environment variants, each with 5 splits (all, Algebra,
 This is a sparse reward environment. Each task requires exactly one tool call to the `answer` tool.
 
 - **AnswerBench**: Binary reward. **1.0** if the LLM grader judges the answer equivalent to the reference, **0.0** otherwise. An LLM rather than a symbolic checker, as in the paper, so a correct answer in a different form (e.g. `\lceil \log_2(a+1) \rceil` for `\lfloor \log_2 a \rfloor + 1`) is not marked wrong.
-- **GradingBench**: Binary reward. **1.0** if the extracted grade matches the expected grade, **0.0** otherwise. A Gemini LLM (gemini-2.5-flash) is used as a fallback to extract the grade from the agent's response when direct parsing fails.
-- **ProofBench**: Continuous reward on the IMO scale. The proof is graded by an LLM grader (gemini-2.5-pro) which assigns a score from {0, 1, 6, 7} out of 7. Reward is the score divided by 7 (0.0 to 1.0).
+- **GradingBench**: Binary reward. **1.0** if the extracted grade matches the expected grade, **0.0** otherwise. The grade is read from the last word of the response; only when that fails does the LLM grader (gemini-2.5-flash by default) extract it.
+- **ProofBench**: Continuous reward on the IMO scale. The proof is graded by an LLM grader (gemini-2.5-pro by default) which assigns a score from {0, 1, 6, 7} out of 7. Reward is the score divided by 7 (0.0 to 1.0).
 
 ## Data
 
 Problems are sourced from International Mathematical Olympiad competitions, stored as CSV files. Data files are stored on the OpenReward platform.
 
+The data is the original IMO-Bench release (`answerbench.csv`, `proofbench.csv`, `gradingbench.csv`). Upstream has since deprecated the first two for `answerbench_v2.csv` (fixes ambiguous statements and incorrect answers) and `proofbench_v2.csv` (a typo fix and two clarified geometry statements); this environment has not moved to v2 yet.
+
 ## Tools
 
 Agents are given a single tool across all three sub-environments:
 
-- `answer`: Submit an answer (numerical answer for AnswerBench, grading analysis for GradingBench, or proof for ProofBench). Returns the grade and score. This tool can only be called once per task.
+- `answer`: Submit an answer (final answer for AnswerBench, grading analysis for GradingBench, or proof for ProofBench). Returns the grade and score. This tool can only be called once per task.
 
 ## Time Horizon
 
@@ -60,7 +62,7 @@ IMO-Bench consists of single-turn environments. The agent receives a math proble
 All three variants need an LLM grader, configured through session secrets.
 
 - `gemini_api_key`: grade with Gemini, using the models above (the benchmark's reference setup).
-- `openai_api_key`: grade with any OpenAI-compatible chat endpoint instead. `OPENAI_BASE_URL` redirects it to another provider, and `JUDGE_MODEL` names the model (default `gpt-5-mini`). The model used is recorded in each result's metadata (`judge_model` for ProofBench, `extraction_model` for GradingBench). Scores graded this way are not comparable with results graded by Gemini.
+- `openai_api_key`: grade with any OpenAI-compatible chat endpoint instead. `OPENAI_BASE_URL` redirects it to another provider, and `JUDGE_MODEL` names the model (default `gpt-5-mini`). The model used is recorded in each result's metadata (`judge_model` for AnswerBench and ProofBench, `extraction_model` for GradingBench, set only when the fallback ran). Scores graded this way are not comparable with results graded by Gemini.
 
 If both are given, `openai_api_key` wins.
 
