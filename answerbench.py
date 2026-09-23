@@ -5,7 +5,8 @@ from typing import cast, List
 from pydantic import BaseModel
 import pandas as pd
 
-from answer_verification import verify_math_answer
+from grading_utils import Grader
+from prompts import ANSWER_GRADING_PROMPT
 from openreward.environments import Environment, tool, JSONObject, ToolOutput, TextBlock, Split
 
 if Path("/orwd_data/").exists():
@@ -23,30 +24,43 @@ class TaskSpec(BaseModel):
 class AnswerParams(BaseModel):
     answer: str
 
+# The last \boxed{Correct|Incorrect} is the verdict; earlier ones can appear in the analysis.
+_VERDICT_RE = re.compile(r"\\boxed\{\s*(Correct|Incorrect)\s*\}", re.IGNORECASE)
+
+
 class IMOBenchAnswerBench(Environment):
     def __init__(self, task_spec: JSONObject, secrets: dict[str, str] = {}) -> None:
         super().__init__(task_spec)
         self.validated = TaskSpec.model_validate(task_spec)
+        self.grader = Grader(secrets)
 
     async def get_prompt(self) -> List[TextBlock]:
         return [TextBlock(text=f"Please reason step by step.\n{self.validated.problem}")]
 
     @tool
     async def answer(self, params: AnswerParams) -> ToolOutput:
-        # verify_math_answer is deterministic and already falls back to string
-        # comparison for unparseable answers, so no retry is needed here. Any
-        # exception that still escapes is a genuine verifier defect and is left
-        # to propagate (the SDK marks the call ToolFailed and ends the rollout)
-        # rather than fabricating a reward.
-        correct = verify_math_answer(params.answer, self.validated.answer)
+        # Graded by an LLM (the paper's AnswerAutoGrader) rather than a symbolic checker, so
+        # an equivalent answer in a different form is not marked wrong.
+        prompt = (ANSWER_GRADING_PROMPT
+                  .replace("{Problem_Statement}", self.validated.problem)
+                  .replace("{Model_Solution}", params.answer)
+                  .replace("{Golden_Answer}", self.validated.answer))
+        response_text = await self.grader.generate("gemini-2.5-pro", prompt)
+
+        verdicts = _VERDICT_RE.findall(response_text)
+        correct: bool | None = verdicts[-1].lower() == "correct" if verdicts else None
+        reward = None if correct is None else (1.0 if correct else 0.0)
+        verdict_text = "Ungraded" if correct is None else ("Correct!" if correct else "Incorrect.")
         return ToolOutput(
             metadata={
                 "correct": correct,
                 "model_answer": params.answer,
                 "solution": self.validated.answer,
+                "grader_response": response_text,
+                "judge_model": self.grader.model_for("gemini-2.5-pro"),
             },
-            blocks=[TextBlock(text=f"{'Correct!' if correct else 'Incorrect.'} Expected: {self.validated.answer}")],
-            reward=1.0 if correct else 0.0,
+            blocks=[TextBlock(text=f"{verdict_text} Expected: {self.validated.answer}")],
+            reward=reward,
             finished=True,
         )
 
