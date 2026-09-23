@@ -4,9 +4,7 @@ from typing import List
 
 from pydantic import BaseModel
 import pandas as pd
-from google import genai
-
-from grading_utils import generate_with_retry
+from grading_utils import Grader
 from prompts import GRADING_PROMPT
 from openreward.environments import Environment, tool, JSONObject, ToolOutput, TextBlock, Split
 
@@ -32,11 +30,7 @@ class IMOBenchProofBench(Environment):
         super().__init__(task_spec)
         self.validated = TaskSpec.model_validate(task_spec)
 
-        api_key = secrets.get("gemini_api_key")
-        if not api_key:
-            raise ValueError("Gemini API key must be provided via secrets parameter")
-
-        self.client = genai.Client(api_key=api_key)
+        self.grader = Grader(secrets)
 
     async def get_prompt(self) -> List[TextBlock]:
         return [TextBlock(text=f"Please reason step by step.\n{self.validated.problem}")]
@@ -50,7 +44,7 @@ class IMOBenchProofBench(Environment):
             student_answer=params.proof_and_solution
         )
 
-        response_text = await generate_with_retry(self.client, "gemini-2.5-pro", prompt)
+        response_text = await self.grader.generate("gemini-2.5-pro", prompt)
 
         # Extract score from <points>N out of 7</points> format
         match = re.search(r"<points>(\d+) out of 7</points>", response_text)
@@ -65,6 +59,7 @@ class IMOBenchProofBench(Environment):
         return ToolOutput(
             metadata={
                 "grader_response": response_text,
+                "judge_model": self.grader.model_for("gemini-2.5-pro"),
                 "extracted_score": extracted_score,
                 "reward": reward,
             },
