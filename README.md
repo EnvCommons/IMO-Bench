@@ -57,7 +57,12 @@ IMO-Bench consists of single-turn environments. The agent receives a math proble
 
 ## Other Environment Requirements
 
-GradingBench and ProofBench require a Google Gemini API key (`GEMINI_API_KEY` secret) for LLM-based grading. AnswerBench has no additional requirements.
+GradingBench and ProofBench need an LLM grader, configured through session secrets. AnswerBench has no additional requirements.
+
+- `gemini_api_key`: grade with Gemini, using the models above (the benchmark's reference setup).
+- `openai_api_key`: grade with any OpenAI-compatible chat endpoint instead. `OPENAI_BASE_URL` redirects it to another provider, and `JUDGE_MODEL` names the model (default `gpt-5-mini`). The model used is recorded in each result's metadata (`judge_model` for ProofBench, `extraction_model` for GradingBench). Scores graded this way are not comparable with results graded by Gemini.
+
+If both are given, `openai_api_key` wins.
 
 ## Safety
 

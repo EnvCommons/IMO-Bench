@@ -4,9 +4,7 @@ from typing import Literal, cast, List
 
 from pydantic import BaseModel
 import pandas as pd
-from google import genai
-
-from grading_utils import generate_with_retry
+from grading_utils import Grader
 from openreward.environments import Environment, tool, JSONObject, ToolOutput, TextBlock, Split
 
 if Path("/orwd_data/").exists():
@@ -15,6 +13,9 @@ else:
     DATA_PATH = Path(__file__).parent
 
 GRADINGBENCH_DF = pd.read_csv(DATA_PATH / "gradingbench.csv")
+# gradingbench.csv has no Category column; each row's problem is a ProofBench problem.
+_CATEGORY_BY_PROBLEM = pd.read_csv(DATA_PATH / "proofbench.csv").set_index("Problem ID")["Category"]
+GRADINGBENCH_DF["Category"] = GRADINGBENCH_DF["Problem ID"].map(_CATEGORY_BY_PROBLEM)
 VALID_SPLITS = [Split(name="all", type="test"), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
 
 class TaskSpec(BaseModel):
@@ -30,11 +31,7 @@ class IMOBenchGradingBench(Environment):
         super().__init__(task_spec)
         self.validated = TaskSpec.model_validate(task_spec)
 
-        api_key = secrets.get("gemini_api_key")
-        if not api_key:
-            raise ValueError("Gemini API key must be provided via secrets parameter")
-
-        self.client = genai.Client(api_key=api_key)
+        self.grader = Grader(secrets)
 
     async def get_prompt(self) -> List[TextBlock]:
         prompt = f"""Carefully analyze the given problem statement and the proposed solution, and then write out your analysis regarding the correctness of the proposed solution.
@@ -56,6 +53,7 @@ Solution:
         response_text = params.grading_analysis_and_score.strip()
         words = response_text.split()
         extracted_grade: str | None = None
+        extraction_model: str | None = None
 
         if words:
             last_word = words[-1].lower().rstrip('.,!?;:')
@@ -83,7 +81,8 @@ Solution:
 Below is the response:
 {params.grading_analysis_and_score}"""
 
-            api_response = await generate_with_retry(self.client, "gemini-2.5-flash", prompt)
+            api_response = await self.grader.generate("gemini-2.5-flash", prompt)
+            extraction_model = self.grader.model_for("gemini-2.5-flash")
             # Extract the grade from the API response
             # Look for "Final answer: " pattern
             match = re.search(r"Final answer:\s*(\w+)", api_response, re.IGNORECASE)
@@ -109,6 +108,7 @@ Below is the response:
                 "correct": correct,
                 "extracted_grade": extracted_grade,
                 "expected_grade": expected_grade,
+                "extraction_model": extraction_model,
                 "grading_analysis_and_score": params.grading_analysis_and_score,
             },
             blocks=[TextBlock(text=f"Grade: {extracted_grade} (Expected: {expected_grade}) - {'Correct' if correct else 'Incorrect'}")],
@@ -126,7 +126,8 @@ Below is the response:
                 continue
             tasks.append(TaskSpec(
                 problem=str(row["Problem"]),
-                solution=str(row["Solution"]),
+                # "Response" is the proof being graded; "Solution" is the reference solution.
+                solution=str(row["Response"]),
                 score_assigned=str(row["Reward"]))
             )
         return [task.model_dump() for task in tasks]
