@@ -2,14 +2,14 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt update && apt upgrade -y && apt install -y \
+RUN apt-get update && apt-get install -y \
     software-properties-common \
     ca-certificates \
     python3 \
     python3-pip \
     curl \
     git \
-    && apt clean \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
