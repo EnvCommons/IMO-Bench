@@ -5,7 +5,7 @@ from typing import Literal, cast, List
 from pydantic import BaseModel
 import pandas as pd
 from grading_utils import Grader
-from openreward.environments import Environment, tool, JSONObject, ToolOutput, TextBlock, Split
+from openreward.environments import Environment, tool, terminal, JSONObject, ToolOutput, TextBlock, Split
 
 if Path("/orwd_data/").exists():
     DATA_PATH = Path("/orwd_data/")
@@ -47,6 +47,7 @@ Solution:
 {self.validated.solution}"""
         return [TextBlock(text=prompt)]
 
+    @terminal
     @tool
     async def answer(self, params: AnswerParams) -> ToolOutput:
         # First, try to extract the grade from the last word of the response
