@@ -7,7 +7,7 @@ import pandas as pd
 
 from grading_utils import Grader
 from prompts import ANSWER_GRADING_PROMPT
-from openreward.environments import Environment, tool, JSONObject, ToolOutput, TextBlock, Split
+from openreward.environments import Environment, tool, terminal, JSONObject, ToolOutput, TextBlock, Split
 
 if Path("/orwd_data/").exists():
     DATA_PATH = Path("/orwd_data/")
@@ -37,6 +37,7 @@ class IMOBenchAnswerBench(Environment):
     async def get_prompt(self) -> List[TextBlock]:
         return [TextBlock(text=f"Please reason step by step.\n{self.validated.problem}")]
 
+    @terminal
     @tool
     async def answer(self, params: AnswerParams) -> ToolOutput:
         # Graded by an LLM (the paper's AnswerAutoGrader) rather than a symbolic checker, so
