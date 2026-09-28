@@ -59,6 +59,7 @@ class IMOBenchAnswerBench(Environment):
                 "solution": self.validated.answer,
                 "grader_response": response_text,
                 "judge_model": self.grader.model,
+                "judge_call": self.grader.last_call,
             },
             blocks=[TextBlock(text=f"{verdict_text} Expected: {self.validated.answer}")],
             reward=reward,
