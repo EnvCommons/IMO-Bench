@@ -27,6 +27,7 @@ if _unknown_ids:
     raise ValueError(f"proofbench_splits.json names unknown Problem IDs: {sorted(_unknown_ids)}")
 VALID_SPLITS = [Split(name="all", type="test"), *(Split(name=name, type="test") for name in ID_SPLITS), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
 VALID_SCORES = {0, 1, 6, 7}
+_ANSWER_CLOSE_RE = re.compile(r"</\s*answer\s*>", re.IGNORECASE)
 
 class TaskSpec(BaseModel):
     problem: str
@@ -44,7 +45,12 @@ class IMOBenchProofBench(Environment):
         self.grader = Grader(secrets)
 
     async def get_prompt(self) -> List[TextBlock]:
-        return [TextBlock(text=f"Please reason step by step.\n{self.validated.problem}")]
+        return [TextBlock(text=(
+            f"Please reason step by step.\n{self.validated.problem}\n\n"
+            "Your reply must be a complete and rigorous proof: justify every step. It is graded on "
+            "the IMO 0-7 scale against a reference solution, and a correct final answer without a "
+            "full proof earns no credit."
+        ))]
 
     @terminal
     @tool
@@ -53,7 +59,9 @@ class IMOBenchProofBench(Environment):
             problem_statement=self.validated.problem,
             solution=self.validated.solution,
             guidelines=self.validated.guidelines,
-            student_answer=params.proof_and_solution
+            # The proof sits inside <answer></answer> in the grader prompt; neutralise any closing
+            # tag in it so the submission cannot end the block and address the grader directly.
+            student_answer=_ANSWER_CLOSE_RE.sub("&lt;/answer&gt;", params.proof_and_solution),
         )
 
         response_text = await self.grader.generate(prompt)
