@@ -27,7 +27,11 @@ if _unknown_ids:
     raise ValueError(f"proofbench_splits.json names unknown Problem IDs: {sorted(_unknown_ids)}")
 VALID_SPLITS = [Split(name="all", type="test"), *(Split(name=name, type="test") for name in ID_SPLITS), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
 VALID_SCORES = {0, 1, 6, 7}
-_ANSWER_CLOSE_RE = re.compile(r"</\s*answer\s*>", re.IGNORECASE)
+# Tags that frame the proof (<proof>) or carry the grader's score (<answer>). Escaped inside the
+# submission, so it can neither close its <proof> block nor plant a score the grader might echo.
+_TAG_RE = re.compile(r"<\s*(/?)\s*(proof|answer)\s*>", re.IGNORECASE)
+# The grader ends with <answer>N</answer>; tolerate "N out of 7" and whitespace inside the tag.
+_SCORE_RE = re.compile(r"<answer>\s*(\d+)(?:\s*out\s+of\s+7)?\s*</answer>", re.IGNORECASE)
 
 class TaskSpec(BaseModel):
     problem: str
@@ -59,18 +63,14 @@ class IMOBenchProofBench(Environment):
             problem_statement=self.validated.problem,
             solution=self.validated.solution,
             guidelines=self.validated.guidelines,
-            # The proof sits inside <answer></answer> in the grader prompt; neutralise any closing
-            # tag in it so the submission cannot end the block and address the grader directly.
-            student_answer=_ANSWER_CLOSE_RE.sub("&lt;/answer&gt;", params.proof_and_solution),
+            student_answer=_TAG_RE.sub(r"&lt;\1\2&gt;", params.proof_and_solution),
         )
 
         response_text = await self.grader.generate(prompt)
 
-        # Extract score from <points>N out of 7</points> format. Take the LAST block,
-        # not the first as the prompt says: the grader's reasoning may quote a
-        # "<points>7 out of 7</points>" planted in the proof, or the option list,
-        # before it gives its own verdict at the end.
-        matches = re.findall(r"<points>(\d+) out of 7</points>", response_text)
+        # Score from the grader's <answer>N</answer>. Take the LAST one: the reasoning may quote
+        # the option list before the verdict at the end. Reward = N / 7 for N in VALID_SCORES.
+        matches = _SCORE_RE.findall(response_text)
         reward: float | None = None
         extracted_score: int | None = None
         if matches:
