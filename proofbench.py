@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import re
 from typing import List
@@ -14,9 +15,17 @@ else:
     DATA_PATH = Path(__file__).parent
 
 PROOFBENCH_DF = pd.read_csv(DATA_PATH / "proofbench.csv")
-# Problem IDs are PB-Basic-NNN / PB-Advanced-NNN; these splits filter on that prefix.
-LEVEL_SPLITS = {"proofbench-basic": "PB-Basic-", "proofbench-advanced": "PB-Advanced-"}
-VALID_SPLITS = [Split(name="all", type="test"), Split(name="proofbench-basic", type="test"), Split(name="proofbench-advanced", type="test"), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
+# Extra splits (e.g. proofbench-basic / proofbench-advanced) are data, not code: an optional
+# proofbench_splits.json in the data directory maps each split name to its Problem IDs.
+_SPLITS_FILE = DATA_PATH / "proofbench_splits.json"
+ID_SPLITS: dict[str, set[str]] = (
+    {name: set(ids) for name, ids in json.loads(_SPLITS_FILE.read_text()).items()}
+    if _SPLITS_FILE.exists() else {}
+)
+_unknown_ids = set().union(*ID_SPLITS.values()) - set(PROOFBENCH_DF["Problem ID"].astype(str))
+if _unknown_ids:
+    raise ValueError(f"proofbench_splits.json names unknown Problem IDs: {sorted(_unknown_ids)}")
+VALID_SPLITS = [Split(name="all", type="test"), *(Split(name=name, type="test") for name in ID_SPLITS), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
 VALID_SCORES = {0, 1, 6, 7}
 
 class TaskSpec(BaseModel):
@@ -80,8 +89,8 @@ class IMOBenchProofBench(Environment):
             raise ValueError(f"Unknown split: {split}")
         tasks = []
         for _, row in PROOFBENCH_DF.iterrows():
-            if split in LEVEL_SPLITS:
-                if not str(row["Problem ID"]).startswith(LEVEL_SPLITS[split]):
+            if split in ID_SPLITS:
+                if str(row["Problem ID"]) not in ID_SPLITS[split]:
                     continue
             elif split != "all" and row["Category"] != split:
                 continue

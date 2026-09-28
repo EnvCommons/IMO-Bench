@@ -23,10 +23,10 @@ IMO-Bench does not require a sandbox. It has minimal compute requirements.
 
 ## Tasks
 
-IMO-Bench contains three environment variants, each with 5 splits (all, Algebra, Combinatorics, Geometry, Number Theory; ProofBench also has proofbench-basic and proofbench-advanced). All splits are test-only. Total: 1,460 tasks.
+IMO-Bench contains three environment variants, each with 5 splits (all, Algebra, Combinatorics, Geometry, Number Theory; ProofBench adds the splits listed in `proofbench_splits.json`). All splits are test-only. Total: 1,460 tasks.
 
 - **AnswerBench** (400 tasks): Problems with short final answers — numbers, expressions or sets (100 per category). The agent solves the problem and submits an answer, which an LLM grader checks for mathematical equivalence with the reference answer (the paper's AnswerAutoGrader prompt; gpt-6-luna, high reasoning).
-- **ProofBench** (60 tasks): Problems requiring full proof generation (30 basic + 30 advanced). The agent writes a proof that is graded on the IMO 0-7 scale by an LLM grader (gpt-6-luna, high reasoning). Splits `proofbench-basic` (PB-Basic-001..030) and `proofbench-advanced` (PB-Advanced-001..030) select the two halves.
+- **ProofBench** (60 tasks): Problems requiring full proof generation (30 basic + 30 advanced). The agent writes a proof that is graded on the IMO 0-7 scale by an LLM grader (gpt-6-luna, high reasoning). Further splits come from an optional `proofbench_splits.json` in the data directory (split name -> Problem IDs); on OpenReward it defines `proofbench-basic` (PB-Basic-001..030) and `proofbench-advanced` (PB-Advanced-001..030).
 - **GradingBench** (1,000 tasks): Problems paired with a proposed solution and a ground-truth grade. The agent analyzes the solution and assigns a grade (incorrect, partial, almost, correct).
 
 ## Reward Structure
