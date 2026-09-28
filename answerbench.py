@@ -46,7 +46,7 @@ class IMOBenchAnswerBench(Environment):
                   .replace("{Problem_Statement}", self.validated.problem)
                   .replace("{Model_Solution}", params.answer)
                   .replace("{Golden_Answer}", self.validated.answer))
-        response_text = await self.grader.generate("gemini-2.5-pro", prompt)
+        response_text = await self.grader.generate(prompt)
 
         verdicts = _VERDICT_RE.findall(response_text)
         correct: bool | None = verdicts[-1].lower() == "correct" if verdicts else None
@@ -58,7 +58,7 @@ class IMOBenchAnswerBench(Environment):
                 "model_answer": params.answer,
                 "solution": self.validated.answer,
                 "grader_response": response_text,
-                "judge_model": self.grader.model_for("gemini-2.5-pro"),
+                "judge_model": self.grader.model,
             },
             blocks=[TextBlock(text=f"{verdict_text} Expected: {self.validated.answer}")],
             reward=reward,

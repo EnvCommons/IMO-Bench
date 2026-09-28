@@ -14,7 +14,9 @@ else:
     DATA_PATH = Path(__file__).parent
 
 PROOFBENCH_DF = pd.read_csv(DATA_PATH / "proofbench.csv")
-VALID_SPLITS = [Split(name="all", type="test"), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
+# Problem IDs are PB-Basic-NNN / PB-Advanced-NNN; these splits filter on that prefix.
+LEVEL_SPLITS = {"proofbench-basic": "PB-Basic-", "proofbench-advanced": "PB-Advanced-"}
+VALID_SPLITS = [Split(name="all", type="test"), Split(name="proofbench-basic", type="test"), Split(name="proofbench-advanced", type="test"), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
 VALID_SCORES = {0, 1, 6, 7}
 
 class TaskSpec(BaseModel):
@@ -45,7 +47,7 @@ class IMOBenchProofBench(Environment):
             student_answer=params.proof_and_solution
         )
 
-        response_text = await self.grader.generate("gemini-2.5-pro", prompt)
+        response_text = await self.grader.generate(prompt)
 
         # Extract score from <points>N out of 7</points> format
         match = re.search(r"<points>(\d+) out of 7</points>", response_text)
@@ -60,7 +62,7 @@ class IMOBenchProofBench(Environment):
         return ToolOutput(
             metadata={
                 "grader_response": response_text,
-                "judge_model": self.grader.model_for("gemini-2.5-pro"),
+                "judge_model": self.grader.model,
                 "extracted_score": extracted_score,
                 "reward": reward,
             },
@@ -75,7 +77,10 @@ class IMOBenchProofBench(Environment):
             raise ValueError(f"Unknown split: {split}")
         tasks = []
         for _, row in PROOFBENCH_DF.iterrows():
-            if split != "all" and row["Category"] != split:
+            if split in LEVEL_SPLITS:
+                if not str(row["Problem ID"]).startswith(LEVEL_SPLITS[split]):
+                    continue
+            elif split != "all" and row["Category"] != split:
                 continue
             tasks.append(TaskSpec(
                 problem=str(row["Problem"]),
