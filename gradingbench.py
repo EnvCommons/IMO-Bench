@@ -62,7 +62,7 @@ Solution:
             if last_word in valid_grades:
                 extracted_grade = last_word
 
-        # If extraction failed, use Gemini API to extract the grade
+        # If extraction failed, use the LLM grader to extract the grade
         if extracted_grade is None:
             prompt = f"""## Instructions for Extracting Final Scores
 **Objective:** Given an response of an evaluation prompt, extract the final score presented within the response and format it specifically.
@@ -82,8 +82,8 @@ Solution:
 Below is the response:
 {params.grading_analysis_and_score}"""
 
-            api_response = await self.grader.generate("gemini-2.5-flash", prompt)
-            extraction_model = self.grader.model_for("gemini-2.5-flash")
+            api_response = await self.grader.generate(prompt)
+            extraction_model = self.grader.model
             # Extract the grade from the API response
             # Look for "Final answer: " pattern
             match = re.search(r"Final answer:\s*(\w+)", api_response, re.IGNORECASE)

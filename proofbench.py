@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import re
 from typing import List
@@ -14,7 +15,17 @@ else:
     DATA_PATH = Path(__file__).parent
 
 PROOFBENCH_DF = pd.read_csv(DATA_PATH / "proofbench.csv")
-VALID_SPLITS = [Split(name="all", type="test"), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
+# Extra splits (e.g. proofbench-basic / proofbench-advanced) are data, not code: an optional
+# proofbench_splits.json in the data directory maps each split name to its Problem IDs.
+_SPLITS_FILE = DATA_PATH / "proofbench_splits.json"
+ID_SPLITS: dict[str, set[str]] = (
+    {name: set(ids) for name, ids in json.loads(_SPLITS_FILE.read_text()).items()}
+    if _SPLITS_FILE.exists() else {}
+)
+_unknown_ids = set().union(*ID_SPLITS.values()) - set(PROOFBENCH_DF["Problem ID"].astype(str))
+if _unknown_ids:
+    raise ValueError(f"proofbench_splits.json names unknown Problem IDs: {sorted(_unknown_ids)}")
+VALID_SPLITS = [Split(name="all", type="test"), *(Split(name=name, type="test") for name in ID_SPLITS), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
 VALID_SCORES = {0, 1, 6, 7}
 
 class TaskSpec(BaseModel):
@@ -45,14 +56,17 @@ class IMOBenchProofBench(Environment):
             student_answer=params.proof_and_solution
         )
 
-        response_text = await self.grader.generate("gemini-2.5-pro", prompt)
+        response_text = await self.grader.generate(prompt)
 
-        # Extract score from <points>N out of 7</points> format
-        match = re.search(r"<points>(\d+) out of 7</points>", response_text)
+        # Extract score from <points>N out of 7</points> format. Take the LAST block,
+        # not the first as the prompt says: the grader's reasoning may quote a
+        # "<points>7 out of 7</points>" planted in the proof, or the option list,
+        # before it gives its own verdict at the end.
+        matches = re.findall(r"<points>(\d+) out of 7</points>", response_text)
         reward: float | None = None
         extracted_score: int | None = None
-        if match:
-            extracted_score = int(match.group(1))
+        if matches:
+            extracted_score = int(matches[-1])
             if extracted_score in VALID_SCORES:
                 reward = extracted_score / 7.0
 
@@ -60,7 +74,7 @@ class IMOBenchProofBench(Environment):
         return ToolOutput(
             metadata={
                 "grader_response": response_text,
-                "judge_model": self.grader.model_for("gemini-2.5-pro"),
+                "judge_model": self.grader.model,
                 "extracted_score": extracted_score,
                 "reward": reward,
             },
@@ -75,7 +89,10 @@ class IMOBenchProofBench(Environment):
             raise ValueError(f"Unknown split: {split}")
         tasks = []
         for _, row in PROOFBENCH_DF.iterrows():
-            if split != "all" and row["Category"] != split:
+            if split in ID_SPLITS:
+                if str(row["Problem ID"]) not in ID_SPLITS[split]:
+                    continue
+            elif split != "all" and row["Category"] != split:
                 continue
             tasks.append(TaskSpec(
                 problem=str(row["Problem"]),

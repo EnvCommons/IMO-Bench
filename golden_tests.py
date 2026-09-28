@@ -9,13 +9,13 @@ from gradingbench import IMOBenchGradingBench, AnswerParams as AnswerParams2
 from proofbench import IMOBenchProofBench, AnswerParams as AnswerParams3
 
 def grader_secrets() -> dict[str, str]:
-    """Grader credentials from the environment: GEMINI_API_KEY, or OPENAI_API_KEY (with
-    OPENAI_BASE_URL / JUDGE_MODEL) for an OpenAI-compatible grader. Skips when neither is set."""
+    """The grader reads KIMI_API_KEY / OPENAI_BASE_URL itself; OPENAI_API_KEY is the secret fallback.
+    Skips when neither key is set."""
+    if os.getenv("KIMI_API_KEY"):
+        return {}
     if os.getenv("OPENAI_API_KEY"):
         return {"openai_api_key": os.environ["OPENAI_API_KEY"]}
-    if os.getenv("GEMINI_API_KEY"):
-        return {"gemini_api_key": os.environ["GEMINI_API_KEY"]}
-    pytest.skip("no grader key: set GEMINI_API_KEY or OPENAI_API_KEY")
+    pytest.skip("no grader key: set KIMI_API_KEY or OPENAI_API_KEY")
 
 # ===== AnswerBench Tests =====
 
@@ -52,7 +52,7 @@ GRADING_TASKS = IMOBenchGradingBench.list_tasks("all")
 @pytest.mark.integration
 @pytest.mark.parametrize("task", GRADING_TASKS)
 async def test_gradingbench_xfail(task: JSONObject):
-    """Test that incorrect grading gets reward=0.0 (requires Gemini API key)"""
+    """Test that incorrect grading gets reward=0.0 (requires OPENAI_API_KEY)"""
     env = IMOBenchGradingBench(task_spec=task, secrets=grader_secrets())
 
     incorrect_answer = "definitely_wrong_answer_123456789"
@@ -68,7 +68,7 @@ PROOF_TASKS = IMOBenchProofBench.list_tasks("all")
 @pytest.mark.integration
 @pytest.mark.parametrize("task", PROOF_TASKS)
 async def test_proofbench_xfail(task: JSONObject):
-    """Test that incorrect proofs get reward=0.0 (requires Gemini API key)"""
+    """Test that incorrect proofs get reward=0.0 (requires OPENAI_API_KEY)"""
     env = IMOBenchProofBench(task_spec=task, secrets=grader_secrets())
 
     incorrect_answer = "definitely_wrong_answer_123456789"

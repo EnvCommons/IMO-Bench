@@ -23,10 +23,10 @@ IMO-Bench does not require a sandbox. It has minimal compute requirements.
 
 ## Tasks
 
-IMO-Bench contains three environment variants, each with 5 splits (all, Algebra, Combinatorics, Geometry, Number Theory). All splits are test-only. Total: 1,460 tasks.
+IMO-Bench contains three environment variants, each with 5 splits (all, Algebra, Combinatorics, Geometry, Number Theory; ProofBench adds the splits listed in `proofbench_splits.json`). All splits are test-only. Total: 1,460 tasks.
 
-- **AnswerBench** (400 tasks): Problems with short final answers — numbers, expressions or sets (100 per category). The agent solves the problem and submits an answer, which an LLM grader checks for mathematical equivalence with the reference answer (the paper's AnswerAutoGrader prompt; gemini-2.5-pro by default).
-- **ProofBench** (60 tasks): Problems requiring full proof generation (30 basic + 30 advanced). The agent writes a proof that is graded on the IMO 0-7 scale by an LLM grader (gemini-2.5-pro by default).
+- **AnswerBench** (400 tasks): Problems with short final answers — numbers, expressions or sets (100 per category). The agent solves the problem and submits an answer, which an LLM grader checks for mathematical equivalence with the reference answer (the paper's AnswerAutoGrader prompt; gpt-6-luna, high reasoning).
+- **ProofBench** (60 tasks): Problems requiring full proof generation (30 basic + 30 advanced). The agent writes a proof that is graded on the IMO 0-7 scale by an LLM grader (gpt-6-luna, high reasoning). Further splits come from an optional `proofbench_splits.json` in the data directory (split name -> Problem IDs); on OpenReward it defines `proofbench-basic` (PB-Basic-001..030) and `proofbench-advanced` (PB-Advanced-001..030).
 - **GradingBench** (1,000 tasks): Problems paired with a proposed solution and a ground-truth grade. The agent analyzes the solution and assigns a grade (incorrect, partial, almost, correct).
 
 ## Reward Structure
@@ -34,8 +34,8 @@ IMO-Bench contains three environment variants, each with 5 splits (all, Algebra,
 This is a sparse reward environment. The agent's first plain reply is its answer and is graded once.
 
 - **AnswerBench**: Binary reward. **1.0** if the LLM grader judges the answer equivalent to the reference, **0.0** otherwise. An LLM rather than a symbolic checker, as in the paper, so a correct answer in a different form (e.g. `\lceil \log_2(a+1) \rceil` for `\lfloor \log_2 a \rfloor + 1`) is not marked wrong.
-- **GradingBench**: Binary reward. **1.0** if the extracted grade matches the expected grade, **0.0** otherwise. The grade is read from the last word of the response; only when that fails does the LLM grader (gemini-2.5-flash by default) extract it.
-- **ProofBench**: Continuous reward on the IMO scale. The proof is graded by an LLM grader (gemini-2.5-pro by default) which assigns a score from {0, 1, 6, 7} out of 7. Reward is the score divided by 7 (0.0 to 1.0).
+- **GradingBench**: Binary reward. **1.0** if the extracted grade matches the expected grade, **0.0** otherwise. The grade is read from the last word of the response; only when that fails does the LLM grader (gpt-6-luna) extract it.
+- **ProofBench**: Continuous reward on the IMO scale. The proof is graded by an LLM grader (gpt-6-luna, high reasoning) which assigns a score from {0, 1, 6, 7} out of 7. Reward is the score divided by 7 (0.0 to 1.0).
 
 ## Data
 
@@ -57,12 +57,7 @@ IMO-Bench consists of single-turn environments. The agent receives a math proble
 
 ## Other Environment Requirements
 
-All three variants need an LLM grader, configured through session secrets.
-
-- `gemini_api_key`: grade with Gemini, using the models above (the benchmark's reference setup).
-- `openai_api_key`: grade with any OpenAI-compatible chat endpoint instead. `OPENAI_BASE_URL` redirects it to another provider, and `JUDGE_MODEL` names the model (default `gpt-5-mini`). The model used is recorded in each result's metadata (`judge_model` for AnswerBench and ProofBench, `extraction_model` for GradingBench, set only when the fallback ran). Scores graded this way are not comparable with results graded by Gemini.
-
-If both are given, `openai_api_key` wins.
+All three variants grade with `gpt-6-luna` at high reasoning effort through the OpenAI Responses API, configured by environment variables: `KIMI_API_KEY` is the grader key (the `openai_api_key` session secret is used when it is unset) and `OPENAI_BASE_URL` the endpoint, e.g. `https://infer.gr.inc/hi/v1`. The model is recorded in each result's metadata (`judge_model` for AnswerBench and ProofBench, `extraction_model` for GradingBench, set only when the fallback ran). Scores are not comparable with the paper's Gemini-graded results.
 
 ## Safety
 

@@ -82,7 +82,6 @@ async def run_variant(or_client, oai_client, env_name, variant, secrets, num_tas
 
 async def main():
     OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
     or_client = AsyncOpenReward()
     oai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -90,8 +89,6 @@ async def main():
     ENV_NAME = "YourOrg/imobench"  # Update with actual org
 
     secrets = {"openai_api_key": OPENAI_API_KEY}
-    if GEMINI_API_KEY:
-        secrets["gemini_api_key"] = GEMINI_API_KEY
 
     for variant in VARIANTS:
         await run_variant(or_client, oai_client, ENV_NAME, variant, secrets)
