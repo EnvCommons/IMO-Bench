@@ -18,14 +18,17 @@ GRADER_REASONING_EFFORT = "high"
 class Grader:
     """gpt-6-luna with high reasoning effort, through the OpenAI Responses API.
 
-    Needs `openai_api_key` in secrets; OPENAI_BASE_URL, when set, redirects the
-    client to another OpenAI-compatible endpoint.
+    The key comes from the KIMI_API_KEY environment variable, falling back to
+    `openai_api_key` in secrets; OPENAI_BASE_URL sets the endpoint (e.g. our
+    infer gateway), defaulting to OpenAI.
     """
 
     def __init__(self, secrets: dict[str, str]) -> None:
-        api_key = secrets.get("openai_api_key")
+        api_key = os.environ.get("KIMI_API_KEY") or secrets.get("openai_api_key")
         if not api_key:
-            raise ValueError("A grader API key must be provided via secrets: openai_api_key")
+            raise ValueError(
+                "A grader API key must be provided: KIMI_API_KEY env var or openai_api_key secret"
+            )
         self._client = openai.AsyncOpenAI(
             api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL") or None
         )

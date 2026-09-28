@@ -9,10 +9,13 @@ from gradingbench import IMOBenchGradingBench, AnswerParams as AnswerParams2
 from proofbench import IMOBenchProofBench, AnswerParams as AnswerParams3
 
 def grader_secrets() -> dict[str, str]:
-    """Grader credentials from the environment: OPENAI_API_KEY (gpt-6-luna). Skips when unset."""
+    """The grader reads KIMI_API_KEY / OPENAI_BASE_URL itself; OPENAI_API_KEY is the secret fallback.
+    Skips when neither key is set."""
+    if os.getenv("KIMI_API_KEY"):
+        return {}
     if os.getenv("OPENAI_API_KEY"):
         return {"openai_api_key": os.environ["OPENAI_API_KEY"]}
-    pytest.skip("no grader key: set OPENAI_API_KEY")
+    pytest.skip("no grader key: set KIMI_API_KEY or OPENAI_API_KEY")
 
 # ===== AnswerBench Tests =====
 
