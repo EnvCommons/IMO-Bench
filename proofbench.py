@@ -49,12 +49,15 @@ class IMOBenchProofBench(Environment):
 
         response_text = await self.grader.generate(prompt)
 
-        # Extract score from <points>N out of 7</points> format
-        match = re.search(r"<points>(\d+) out of 7</points>", response_text)
+        # Extract score from <points>N out of 7</points> format. Take the LAST block,
+        # not the first as the prompt says: the grader's reasoning may quote a
+        # "<points>7 out of 7</points>" planted in the proof, or the option list,
+        # before it gives its own verdict at the end.
+        matches = re.findall(r"<points>(\d+) out of 7</points>", response_text)
         reward: float | None = None
         extracted_score: int | None = None
-        if match:
-            extracted_score = int(match.group(1))
+        if matches:
+            extracted_score = int(matches[-1])
             if extracted_score in VALID_SCORES:
                 reward = extracted_score / 7.0
 
