@@ -59,7 +59,7 @@ IMO-Bench consists of single-turn environments. The agent receives a math proble
 
 ## Other Environment Requirements
 
-All three variants grade with `gpt-6-luna` at high reasoning effort through the OpenAI Responses API, configured by environment variables: `KIMI_API_KEY` is the grader key (the `openai_api_key` session secret is used when it is unset) and `OPENAI_BASE_URL` the endpoint, e.g. `https://infer.gr.inc/hi/v1`. The model is recorded in each result's metadata (`judge_model` for AnswerBench and ProofBench, `extraction_model` for GradingBench, set only when the fallback ran). Scores are not comparable with the paper's Gemini-graded results.
+All three variants grade with `gpt-6-luna` at high reasoning effort through the OpenAI chat completions API, configured by environment variables: `KIMI_API_KEY` is the grader key (the `openai_api_key` session secret is used when it is unset) and `OPENAI_BASE_URL` the endpoint (any OpenAI-compatible server; OpenAI by default). The model is recorded in each result's metadata (`judge_model` for AnswerBench and ProofBench, with `judge_call` giving the model the endpoint reported and its reasoning tokens; `extraction_model` for GradingBench, set only when the fallback ran). Scores are not comparable with the paper's Gemini-graded results.
 
 ## Safety
 

@@ -1,6 +1,8 @@
 """Shared helpers for the LLM-backed graders (answerbench, gradingbench, proofbench)."""
 import asyncio
 import os
+import re
+from typing import Any
 
 import openai
 
@@ -14,13 +16,20 @@ GRADER_BACKOFF_CAP_S = 30
 GRADER_MODEL = "gpt-6-luna"
 GRADER_REASONING_EFFORT = "high"
 
+# A reasoning model served without a reasoning parser returns its thinking inline; strip it so a
+# score it considered while thinking cannot reach the parse.
+_THINK_RE = re.compile(r"^\s*<think>.*?</think>", re.DOTALL)
+
 
 class Grader:
-    """gpt-6-luna with high reasoning effort, through the OpenAI Responses API.
+    """gpt-6-luna with high reasoning effort, through the OpenAI chat completions API.
+
+    Chat completions rather than the Responses API, since every OpenAI-compatible endpoint
+    serves it the same way.
 
     The key comes from the KIMI_API_KEY environment variable, falling back to
-    `openai_api_key` in secrets; OPENAI_BASE_URL sets the endpoint (e.g. our
-    infer gateway), defaulting to OpenAI.
+    `openai_api_key` in secrets; OPENAI_BASE_URL sets the endpoint (any
+    OpenAI-compatible server), defaulting to OpenAI.
     """
 
     def __init__(self, secrets: dict[str, str]) -> None:
@@ -33,17 +42,28 @@ class Grader:
             api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL") or None
         )
         self.model = GRADER_MODEL
+        # What the endpoint reported for the last successful call: the served model name and how
+        # much it reasoned. Recorded in each result so a non-reasoning judge is visible.
+        self.last_call: dict[str, Any] = {}
 
     async def _generate_once(self, prompt: str) -> str:
-        # output_text holds only the message text, not the reasoning items, so a
-        # score the model considered while thinking cannot leak into the parse.
-        response = await self._client.responses.create(
+        response = await self._client.chat.completions.create(
             model=self.model,
-            reasoning={"effort": GRADER_REASONING_EFFORT},
-            input=[{"role": "user", "content": prompt}],
+            reasoning_effort=GRADER_REASONING_EFFORT,
+            messages=[{"role": "user", "content": prompt}],
         )
-        text = (response.output_text or "").strip()
+        message = response.choices[0].message
+        text = _THINK_RE.sub("", message.content or "").strip()
         assert text, "grader returned an empty response"
+        usage = response.usage
+        details = getattr(usage, "completion_tokens_details", None)
+        self.last_call = {
+            "served_model": response.model,
+            # OpenAI reports reasoning tokens under completion_tokens_details; some compatible
+            # servers put them at the top level of usage.
+            "reasoning_tokens": getattr(details, "reasoning_tokens", None) or getattr(usage, "reasoning_tokens", None),
+            "reasoning_chars": len(getattr(message, "reasoning_content", None) or ""),
+        }
         return text
 
     async def generate(self, prompt: str, *, max_attempts: int = GRADER_MAX_ATTEMPTS) -> str:

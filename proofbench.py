@@ -83,6 +83,7 @@ class IMOBenchProofBench(Environment):
             metadata={
                 "grader_response": response_text,
                 "judge_model": self.grader.model,
+                "judge_call": self.grader.last_call,
                 "extracted_score": extracted_score,
                 "reward": reward,
             },
