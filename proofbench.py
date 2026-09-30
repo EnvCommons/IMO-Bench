@@ -7,7 +7,7 @@ from pydantic import BaseModel
 import pandas as pd
 from grading_utils import Grader
 from prompts import GRADING_PROMPT
-from openreward.environments import Environment, tool, terminal, JSONObject, ToolOutput, TextBlock, Split
+from openreward.environments import Environment, tool, JSONObject, ToolOutput, TextBlock, Split
 
 if Path("/orwd_data/").exists():
     DATA_PATH = Path("/orwd_data/")
@@ -27,6 +27,9 @@ if _unknown_ids:
     raise ValueError(f"proofbench_splits.json names unknown Problem IDs: {sorted(_unknown_ids)}")
 VALID_SPLITS = [Split(name="all", type="test"), *(Split(name=name, type="test") for name in ID_SPLITS), Split(name="Algebra", type="test"), Split(name="Combinatorics", type="test"), Split(name="Geometry", type="test"), Split(name="Number theory", type="test")]
 VALID_SCORES = {0, 1, 6, 7}
+# Reward for a submission made after the task has already been graded. Negative
+# so repeat submissions are actively discouraged, not merely left unscored.
+REPEAT_SUBMISSION_PENALTY = -0.1
 # Tags that frame the proof (<proof>) or carry the grader's score (<answer>). Escaped inside the
 # submission, so it can neither close its <proof> block nor plant a score the grader might echo.
 _TAG_RE = re.compile(r"<\s*(/?)\s*(proof|answer)\s*>", re.IGNORECASE)
@@ -38,8 +41,9 @@ class TaskSpec(BaseModel):
     solution: str
     guidelines: str
 
-class AnswerParams(BaseModel):
-    proof_and_solution: str
+class ProofInput(BaseModel):
+    """Input schema for submit_proof tool"""
+    proof: str
 
 class IMOBenchProofBench(Environment):
     def __init__(self, task_spec: JSONObject, secrets: dict[str, str] = {}) -> None:
@@ -48,22 +52,46 @@ class IMOBenchProofBench(Environment):
 
         self.grader = Grader(secrets)
 
+        # Number of proofs submitted this session — only the first is graded/rewarded
+        self.submitted = 0
+
     async def get_prompt(self) -> List[TextBlock]:
         return [TextBlock(text=(
             f"Please reason step by step.\n{self.validated.problem}\n\n"
-            "Your reply must be a complete and rigorous proof: justify every step. It is graded on "
-            "the IMO 0-7 scale against a reference solution, and a correct final answer without a "
-            "full proof earns no credit."
+            "Submit a complete and rigorous proof with the `submit_proof` tool: justify every step. "
+            "It is graded on the IMO 0-7 scale against a reference solution, and a correct final "
+            "answer without a full proof earns no credit."
         ))]
 
-    @terminal
     @tool
-    async def answer(self, params: AnswerParams) -> ToolOutput:
+    async def submit_proof(self, params: ProofInput) -> ToolOutput:
+        """
+        Submit your proof for grading. This will end the episode.
+
+        The proof will be evaluated against a rubric (0-7 scale) by an expert grader.
+        You will receive a score and reward.
+        """
+        # Only the first submission is graded and rewarded
+        if self.submitted > 0:
+            return ToolOutput(
+                blocks=[TextBlock(
+                    type="text",
+                    text="A proof has already been submitted for this task. This episode is over: the proof is not re-graded, and repeat submissions are penalised (reward -0.1).",
+                )],
+                metadata={
+                    "already_submitted": True,
+                    "submission_count": self.submitted,
+                },
+                reward=REPEAT_SUBMISSION_PENALTY,
+                finished=True,
+            )
+        self.submitted += 1
+
         prompt = GRADING_PROMPT.format(
             problem_statement=self.validated.problem,
             solution=self.validated.solution,
             guidelines=self.validated.guidelines,
-            student_answer=_TAG_RE.sub(r"&lt;\1\2&gt;", params.proof_and_solution),
+            student_answer=_TAG_RE.sub(r"&lt;\1\2&gt;", params.proof),
         )
 
         response_text = await self.grader.generate(prompt)
@@ -78,7 +106,12 @@ class IMOBenchProofBench(Environment):
             if extracted_score in VALID_SCORES:
                 reward = extracted_score / 7.0
 
-        score_text = f"{extracted_score}/7" if extracted_score is not None else "N/A"
+        # Same display as FineProofs-RL; a grade that did not parse has no reward to format.
+        if reward is not None:
+            display_text = f"**Score: {extracted_score}/7 | Reward: {reward:.2f}**"
+        else:
+            score_text = f"{extracted_score}/7" if extracted_score is not None else "N/A"
+            display_text = f"**Score: {score_text} | Reward: N/A**"
         return ToolOutput(
             metadata={
                 "grader_response": response_text,
@@ -87,7 +120,7 @@ class IMOBenchProofBench(Environment):
                 "extracted_score": extracted_score,
                 "reward": reward,
             },
-            blocks=[TextBlock(text=f"Score: {score_text} (Reward: {reward if reward is not None else 'N/A'})")],
+            blocks=[TextBlock(type="text", text=display_text)],
             reward=reward,
             finished=True,
         )

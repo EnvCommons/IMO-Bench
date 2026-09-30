@@ -6,7 +6,7 @@ from openreward.environments import ToolOutput, JSONObject
 
 from answerbench import IMOBenchAnswerBench, AnswerParams as AnswerParams1
 from gradingbench import IMOBenchGradingBench, AnswerParams as AnswerParams2
-from proofbench import IMOBenchProofBench, AnswerParams as AnswerParams3
+from proofbench import IMOBenchProofBench, ProofInput
 
 def grader_secrets() -> dict[str, str]:
     """The grader reads KIMI_API_KEY / OPENAI_BASE_URL itself; OPENAI_API_KEY is the secret fallback.
@@ -72,7 +72,7 @@ async def test_proofbench_xfail(task: JSONObject):
     env = IMOBenchProofBench(task_spec=task, secrets=grader_secrets())
 
     incorrect_answer = "definitely_wrong_answer_123456789"
-    result: ToolOutput = await env.answer(AnswerParams3(proof_and_solution=incorrect_answer))
+    result: ToolOutput = await env.submit_proof(ProofInput(proof=incorrect_answer))
     # Proofbench may return reward=None or reward=0.0 for errors
     assert result.reward is not None
     assert result.reward <= 0.0
