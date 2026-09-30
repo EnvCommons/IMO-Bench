@@ -33,7 +33,7 @@ IMO-Bench contains three environment variants, each with 5 splits (all, Algebra,
 
 ## Reward Structure
 
-This is a sparse reward environment. The agent's first plain reply is its answer and is graded once.
+This is a sparse reward environment. In AnswerBench and GradingBench the agent's first plain reply is its answer and is graded once; in ProofBench the proof passed to `submit_proof` is graded once.
 
 - **AnswerBench**: Binary reward. **1.0** if the LLM grader judges the answer equivalent to the reference, **0.0** otherwise. An LLM rather than a symbolic checker, as in the paper, so a correct answer in a different form (e.g. `\lceil \log_2(a+1) \rceil` for `\lfloor \log_2 a \rfloor + 1`) is not marked wrong.
 - **GradingBench**: Binary reward. **1.0** if the extracted grade matches the expected grade, **0.0** otherwise. The grade is read from the last word of the response; only when that fails does the LLM grader (gpt-6-luna) extract it.
@@ -47,11 +47,15 @@ The data is the original IMO-Bench release (`answerbench.csv`, `proofbench.csv`,
 
 ## Tools
 
-Agents are given no tools. Each sub-environment's `answer` tool is marked `@terminal`: the SDK hides it, and the harness routes the agent's first plain (non-tool-call) reply into it. The agent simply writes its solution — the final answer for AnswerBench, the proof for ProofBench, or the grading analysis ending in a grade for GradingBench — and the grader reads that text, as in the original IMO-Bench, where graders assess the model's written solution.
+AnswerBench and GradingBench give agents no tools: their `answer` tool is marked `@terminal`, so the SDK hides it and the harness routes the agent's first plain (non-tool-call) reply into it. The agent simply writes its solution (the final answer for AnswerBench, or the grading analysis ending in a grade for GradingBench) and the grader reads that text.
+
+| Tool | Variant | Description |
+|------|---------|-------------|
+| `submit_proof(proof)` | ProofBench | Submit the proof for grading. Ends the episode. Only the first submission is graded; a repeat submission gets reward -0.1 and is not re-graded. |
 
 ## Time Horizon
 
-IMO-Bench consists of single-turn environments. The agent receives a math problem and replies once; that reply is graded.
+IMO-Bench consists of single-submission environments. The agent receives a math problem and submits once: its reply (AnswerBench, GradingBench) or its `submit_proof` call (ProofBench) is graded.
 
 ## Environment Difficulty
 
