@@ -14,7 +14,9 @@ GRADER_MAX_ATTEMPTS = 4
 GRADER_BACKOFF_CAP_S = 30
 
 GRADER_MODEL = "gpt-6-luna"
-GRADER_REASONING_EFFORT = "high"
+# GRADER_REASONING_EFFORT overrides it per deployment. GLM-5.2 on infer.gr.inc treats `high` as its
+# longest thinking mode and `medium` or lower as its shorter one.
+DEFAULT_GRADER_REASONING_EFFORT = "high"
 
 # A reasoning model served without a reasoning parser returns its thinking inline; strip it so a
 # score it considered while thinking cannot reach the parse.
@@ -29,7 +31,8 @@ class Grader:
 
     The key comes from the KIMI_API_KEY environment variable, falling back to
     `openai_api_key` in secrets; OPENAI_BASE_URL sets the endpoint (any
-    OpenAI-compatible server), defaulting to OpenAI.
+    OpenAI-compatible server), defaulting to OpenAI; GRADER_REASONING_EFFORT sets the
+    reasoning effort, defaulting to high.
     """
 
     def __init__(self, secrets: dict[str, str]) -> None:
@@ -42,6 +45,7 @@ class Grader:
             api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL") or None
         )
         self.model = GRADER_MODEL
+        self.reasoning_effort = os.environ.get("GRADER_REASONING_EFFORT") or DEFAULT_GRADER_REASONING_EFFORT
         # What the endpoint reported for the last successful call: the served model name and how
         # much it reasoned. Recorded in each result so a non-reasoning judge is visible.
         self.last_call: dict[str, Any] = {}
@@ -49,7 +53,7 @@ class Grader:
     async def _generate_once(self, prompt: str) -> str:
         response = await self._client.chat.completions.create(
             model=self.model,
-            reasoning_effort=GRADER_REASONING_EFFORT,
+            reasoning_effort=self.reasoning_effort,
             messages=[{"role": "user", "content": prompt}],
         )
         message = response.choices[0].message
@@ -59,6 +63,7 @@ class Grader:
         details = getattr(usage, "completion_tokens_details", None)
         self.last_call = {
             "served_model": response.model,
+            "reasoning_effort": self.reasoning_effort,
             # OpenAI reports reasoning tokens under completion_tokens_details; some compatible
             # servers put them at the top level of usage.
             "reasoning_tokens": getattr(details, "reasoning_tokens", None) or getattr(usage, "reasoning_tokens", None),
